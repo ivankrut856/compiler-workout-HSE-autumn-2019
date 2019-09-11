@@ -50,5 +50,25 @@ let _ =
    Takes a state and an expression, and returns the value of the expression in 
    the given state.
 *)
-let eval = failwith "Not implemented yet"
-                    
+
+let to_bool x = if x = 0 then false else true
+let to_int (x : bool) : int = if x then 1 else 0
+
+let rec eval (s : state) (e : expr) : int = 
+    match e with
+    | Const x -> x
+    | Var x -> s x
+    | Binop ("!!", e1, e2) -> to_int ((to_bool @@ eval s e1) || (to_bool @@ eval s e1))
+    | Binop ("&&", e1, e2) -> to_int ((to_bool @@ eval s e1) && (to_bool @@ eval s e1))
+    | Binop ("==", e1, e2) -> to_int ((eval s e1) = (eval s e2))
+    | Binop ("!=", e1, e2) -> to_int ((eval s e1) <> (eval s e2))
+    | Binop ("<", e1, e2) -> to_int ((eval s e1) < (eval s e2))
+    | Binop (">", e1, e2) -> to_int ((eval s e1) > (eval s e2))
+    | Binop ("<=", e1, e2) -> to_int ((eval s e1) <= (eval s e2))
+    | Binop (">=", e1, e2) -> to_int ((eval s e1) >= (eval s e2))
+    | Binop ("+", e1, e2) -> (eval s e1) + (eval s e2)
+    | Binop ("-", e1, e2) -> (eval s e1) - (eval s e2)
+    | Binop ("*", e1, e2) -> (eval s e1) * (eval s e2)
+    | Binop ("/", e1, e2) -> (eval s e1) / (eval s e2)
+    | Binop ("%", e1, e2) -> (eval s e1) mod (eval s e2)
+    | _ -> failwith (Printf.sprintf "Parse error")
