@@ -36,12 +36,14 @@ let update x v s = fun y -> if x = y then v else s y
 let s = update "x" 1 @@ update "y" 2 @@ update "z" 3 @@ update "t" 4 empty
 
 (* Some testing; comment this definition out when submitting the solution. *)
+(*
 let _ =
   List.iter
     (fun x ->
        try  Printf.printf "%s=%d\n" x @@ s x
        with Failure s -> Printf.printf "%s\n" s
     ) ["x"; "a"; "y"; "z"; "t"; "b"]
+*)
 
 (* Expression evaluator
 
@@ -58,8 +60,8 @@ let rec eval (s : state) (e : expr) : int =
     match e with
     | Const x -> x
     | Var x -> s x
-    | Binop ("!!", e1, e2) -> to_int ((to_bool @@ eval s e1) || (to_bool @@ eval s e1))
-    | Binop ("&&", e1, e2) -> to_int ((to_bool @@ eval s e1) && (to_bool @@ eval s e1))
+    | Binop ("!!", e1, e2) -> to_int ((to_bool @@ eval s e1) || (to_bool @@ eval s e2))
+    | Binop ("&&", e1, e2) -> to_int ((to_bool @@ eval s e1) && (to_bool @@ eval s e2))
     | Binop ("==", e1, e2) -> to_int ((eval s e1) = (eval s e2))
     | Binop ("!=", e1, e2) -> to_int ((eval s e1) <> (eval s e2))
     | Binop ("<", e1, e2) -> to_int ((eval s e1) < (eval s e2))
