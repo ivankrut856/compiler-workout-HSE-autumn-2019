@@ -41,7 +41,27 @@ module Expr =
        Takes a state and an expression, and returns the value of the expression in 
        the given state.
     *)
-    let eval _ = failwith "Not implemented yet"
+    let to_bool x = if x = 0 then false else true
+    let to_int (x : bool) : int = if x then 1 else 0
+
+    let rec eval (s : state) (e : t) : int = 
+        match e with
+        | Const x -> x
+        | Var x -> s x
+        | Binop ("!!", e1, e2) -> to_int ((to_bool @@ eval s e1) || (to_bool @@ eval s e2))
+        | Binop ("&&", e1, e2) -> to_int ((to_bool @@ eval s e1) && (to_bool @@ eval s e2))
+        | Binop ("==", e1, e2) -> to_int ((eval s e1) = (eval s e2))
+        | Binop ("!=", e1, e2) -> to_int ((eval s e1) <> (eval s e2))
+        | Binop ("<", e1, e2) -> to_int ((eval s e1) < (eval s e2))
+        | Binop (">", e1, e2) -> to_int ((eval s e1) > (eval s e2))
+        | Binop ("<=", e1, e2) -> to_int ((eval s e1) <= (eval s e2))
+        | Binop (">=", e1, e2) -> to_int ((eval s e1) >= (eval s e2))
+        | Binop ("+", e1, e2) -> (eval s e1) + (eval s e2)
+        | Binop ("-", e1, e2) -> (eval s e1) - (eval s e2)
+        | Binop ("*", e1, e2) -> (eval s e1) * (eval s e2)
+        | Binop ("/", e1, e2) -> (eval s e1) / (eval s e2)
+        | Binop ("%", e1, e2) -> (eval s e1) mod (eval s e2)
+        | _ -> failwith (Printf.sprintf "Parse error")
 
   end
                     
@@ -65,7 +85,23 @@ module Stmt =
 
        Takes a configuration and a statement, and returns another configuration
     *)
-    let eval _ = failwith "Not implemented yet"
+    let rec eval (c : config) (stm : t) : config = 
+        match stm with
+        | Seq (s1, s2) -> eval (eval c s1) s2
+        | Assign (s, exp) -> (
+            match c with
+            | (state, input, output) -> ((Expr.update s (Expr.eval state exp) state), input, output)
+        )
+        | Read s -> (
+            match c with
+            | (state, z :: input, output) -> ((Expr.update s z state), input, output)
+            | _ -> failwith (Printf.sprintf "Unexpected end of file")
+        )
+        | Write exp -> (
+            match c with
+            | (state, input, output) -> (state, input, output@[(Expr.eval state exp)])
+        )
+
                                                          
   end
 
