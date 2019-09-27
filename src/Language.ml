@@ -90,26 +90,28 @@ module Expr =
             !(Util.expr
                 (fun x -> x)
                 [|
-                    `Nona, [
-                            ostap ("<="), (fun x y -> Binop("<=", x, y));
-                            ostap (">="), (fun x y -> Binop(">=", x, y));
-                            ostap ("<"), (fun x y -> Binop("<", x, y));
-                            ostap (">"), (fun x y -> Binop(">", x, y));
-                            ostap ("!="), (fun x y -> Binop("!=", x, y));
-                            ostap ("=="), (fun x y -> Binop("==", x, y));
-                           ];
-                    `Lefta, [        
-                             ostap ("&&"), (fun x y -> Binop("&&", x, y));
-                             ostap ("!!"), (fun x y -> Binop("!!", x, y));
-                            ];
-                    `Lefta, [                            
-                             ostap ("-"), (fun x y -> Binop("-", x, y));
-                             ostap ("+"), (fun x y -> Binop("+", x, y));
+                    `Lefta, [
+                              ostap("!!"), (fun x y -> Binop ("!!", x, y))
                             ];
                     `Lefta, [
-                             ostap ("%"), (fun x y -> Binop("%", x, y));
-                             ostap ("/"), (fun x y -> Binop("/", x, y));
-                             ostap ("*"), (fun x y -> Binop("*", x, y));
+                              ostap("&&"), (fun x y -> Binop ("&&", x, y))
+                            ];
+                    `Nona,  [
+                              ostap("=="), (fun x y -> Binop ("==", x, y));
+                              ostap("!="), (fun x y -> Binop ("!=", x, y));
+                              ostap("<="), (fun x y -> Binop ("<=", x, y));
+                              ostap("<"),  (fun x y -> Binop ("<", x, y));
+                              ostap(">="), (fun x y -> Binop (">=", x, y));
+                              ostap(">"),  (fun x y -> Binop (">", x, y))
+                            ];
+                    `Lefta, [
+                              ostap("+"), (fun x y -> Binop ("+", x, y));
+                              ostap("-"), (fun x y -> Binop ("-", x, y))
+                            ];
+                    `Lefta, [
+                              ostap("*"), (fun x y -> Binop ("*", x, y));
+                              ostap("%"), (fun x y -> Binop ("%", x, y));
+                              ostap("/"), (fun x y -> Binop ("/", x, y))
                             ];
                     (* `Righta, []; *)
                 |]
