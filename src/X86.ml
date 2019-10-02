@@ -86,7 +86,77 @@ open SM
    Take an environment, a stack machine program, and returns a pair --- the updated environment and the list
    of x86 instructions
 *)
-let compile env code = failwith "Not yet implemented"
+
+
+let is_cmp = function
+| "==" -> true
+| "!=" -> true
+| "<" -> true
+| "<=" -> true
+| ">" -> true
+| ">=" -> true
+| otherwise -> false
+
+
+let is_div = function
+| "%" -> true
+| "/" -> true
+| otherwise -> false
+
+let suf_of_op = function
+| "==" -> "e"
+| "!=" -> "ne"
+| "<" -> "l"
+| "<=" -> "le"
+| ">" -> "g"
+| ">=" -> "ge"
+| otherwise -> failwith "The op is not cmp op"
+
+let rec compile env = function 
+| [] -> (env, [])
+| (p::ps) -> (match p with
+  | (CONST x) ->  let ptr, env' = env#allocate in
+                  let commands = [Mov ((L x), ptr)] in
+                  let f_env, f_com = compile env' ps in
+                  (f_env, commands @ f_com)
+  | (LD v) -> let ptr, env' = (env#global v)#allocate in
+              let var = (env'#loc v) in
+              let commands = match ptr with
+              | R n -> [Mov ((M var), (R n))]
+              | s -> [Mov ((M var), eax); Mov (eax, s)] in
+              let f_env, f_com = compile env' ps in
+              (f_env, commands @ f_com)
+  | (ST v) -> let ptr, env' = (env#global v)#pop in
+              let var = (env'#loc v) in
+              let commands = match ptr with
+              | R n -> [Mov ((R n), (M var))]
+              | s -> [Mov (s, eax); Mov (eax, (M var))] in
+              let f_env, f_com = compile env' ps in
+              (f_env, commands @ f_com)
+  | READ -> let ptr, env' = env#allocate in
+            let commands = [Call "Lread"; Mov (eax, ptr)] in
+            let f_env, f_com = compile env' ps in
+            (f_env, commands @ f_com)
+  | WRITE -> let ptr, env' = env#pop in
+             let commands = [Mov (ptr, eax); Push eax; Call "Lwrite"; Pop eax] in
+             let f_env, f_com = compile env' ps in
+             (f_env, commands @ f_com)
+  | BINOP op when (is_cmp op) -> let y, x, env' = (env#pop2) in
+                                 let ptr, env'' = (env#allocate) in
+                                 let commands = [Mov (x, eax); Mov (y, edi); Binop ("^", edx, edx); Binop ("cmp", edi, eax); Set (suf_of_op op, "%dl"); Mov (edx, ptr)] in 
+                                 let f_env, f_com = compile env'' ps in
+                                 (f_env, commands @ f_com)
+  | BINOP op when (is_div op) -> let y, x, env' = (env#pop2) in
+                                 let ptr, env'' = (env'#allocate) in
+                                 let commands = [Mov (x, eax); Cltd; Mov (y, edi); IDiv edi; Mov ((if op = "/" then eax else edx), ptr)] in
+                                 let f_env, f_com = compile env'' ps in
+                                 (f_env, commands @ f_com)
+  | BINOP op -> let y, x, env' = (env#pop2) in
+                let ptr, env'' = (env'#allocate) in
+                let commands = [Mov (x, eax); Mov (y, edi); Binop (op, edi, eax); Mov (eax, ptr)] in
+                let f_env, f_com = compile env'' ps in
+                (f_env, commands @ f_com)
+)
 
 (* A set of strings *)           
 module S = Set.Make (String)
@@ -104,14 +174,14 @@ class env =
     (* allocates a fresh position on a symbolic stack *)
     method allocate =    
       let x, n =
-	let rec allocate' = function
-	| []                            -> ebx     , 0
-	| (S n)::_                      -> S (n+1) , n+1
-	| (R n)::_ when n < num_of_regs -> R (n+1) , stack_slots
-        | (M _)::s                      -> allocate' s
-	| _                             -> S 0     , 1
-	in
-	allocate' stack
+  let rec allocate' = function
+  | []                                -> ebx     , 0
+  | (S n)::_                          -> S (n+1) , n+2
+  | (R n)::_ when n < num_of_regs - 1 -> R (n+1) , 0
+  | (M _)::s                          -> allocate' s
+  | _                                 -> S 0     , 1
+  in
+  allocate' stack
       in
       x, {< stack_slots = max n stack_slots; stack = x::stack >}
 

@@ -28,7 +28,38 @@ type config = int list * Stmt.config
    Takes an environment, a configuration and a program, and returns a configuration as a result. The
    environment is used to locate a label to jump to (via method env#labeled <label_name>)
 *)                         
-let rec eval env conf prog = failwith "Not yet implemented"
+(* let rec eval env conf prog = failwith "Not yet implemented" *)
+let binop_exec (op : string) (y : int) (x : int) : int = match op with
+    | "!!" -> Language.Expr.to_int ((Language.Expr.to_bool x) || (Language.Expr.to_bool y))
+    | "&&" -> Language.Expr.to_int ((Language.Expr.to_bool x) && (Language.Expr.to_bool y))
+    | "==" -> Language.Expr.to_int (x = y)
+    | "!=" -> Language.Expr.to_int (x <> y)
+    | "<" -> Language.Expr.to_int (x < y)
+    | ">" -> Language.Expr.to_int (x > y)
+    | "<=" -> Language.Expr.to_int (x <= y)
+    | ">=" -> Language.Expr.to_int (x >= y)
+    | "+" -> x + y
+    | "-" -> x - y
+    | "*" -> x * y
+    | "/" -> x / y
+    | "%" -> x mod y
+    | _ -> failwith "Incorrect binop code"
+
+let rec exec (c : config) (order : insn) : config = match order, c with
+    | CONST v, (stack, synconf) -> (v :: stack, synconf)
+    | BINOP op, (y :: x :: stack, synconf) -> ((binop_exec op y x) :: stack, synconf)
+    | BINOP op, _ -> failwith "There are no two needed values on the stack"
+    | READ, (stack, (state, z :: input, output)) -> (z :: stack, (state, input, output))
+    | READ, _ -> failwith "Unexpected end of file"
+    | WRITE, (z :: stack, (state, input, output)) -> (stack, (state, input, output @ [z]))
+    | WRITE, _ -> failwith "Empty stack on write operation"
+    | LD s, (stack, (state, input, output)) -> ((state s) :: stack, (state, input, output))
+    | ST s, (z :: stack, (state, input, output)) -> (stack, ((Language.Expr.update s z state), input, output))
+    | ST s, _ -> failwith "Empty stack on store operation"
+
+
+
+let rec eval env c p = List.fold_left exec c p
 
 (* Top-level evaluation
 
@@ -53,4 +84,14 @@ let run p i =
    Takes a program in the source language and returns an equivalent program for the
    stack machine
 *)
-let compile p = failwith "Not yet implemented"
+let rec compile =
+  let rec expr = function
+  | Expr.Var   x          -> [LD x]
+  | Expr.Const n          -> [CONST n]
+  | Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
+  in
+  function
+  | Stmt.Seq (s1, s2)  -> compile s1 @ compile s2
+  | Stmt.Read x        -> [READ; ST x]
+  | Stmt.Write e       -> expr e @ [WRITE]
+  | Stmt.Assign (x, e) -> expr e @ [ST x]

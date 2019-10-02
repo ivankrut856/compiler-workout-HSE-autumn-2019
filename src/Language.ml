@@ -5,6 +5,7 @@ open GT
 
 (* Opening a library for combinator-based syntax analysis *)
 open Ostap.Combinators
+open Ostap
        
 (* Simple expressions: syntax and semantics *)
 module Expr =
@@ -44,7 +45,78 @@ module Expr =
        Takes a state and an expression, and returns the value of the expression in 
        the given state.
     *)                                                       
-    let eval st expr = failwith "Not yet implemented"
+    (* let eval st expr = failwith "Not yet implemented" *)
+
+    let to_bool x = if x = 0 then false else true
+    let to_int (x : bool) : int = if x then 1 else 0
+
+    let rec eval (s : state) (e : t) : int = 
+        match e with
+        | Const x -> x
+        | Var x -> s x
+        | Binop ("!!", e1, e2) -> to_int ((to_bool @@ eval s e1) || (to_bool @@ eval s e2))
+        | Binop ("&&", e1, e2) -> to_int ((to_bool @@ eval s e1) && (to_bool @@ eval s e2))
+        | Binop ("==", e1, e2) -> to_int ((eval s e1) = (eval s e2))
+        | Binop ("!=", e1, e2) -> to_int ((eval s e1) <> (eval s e2))
+        | Binop ("<", e1, e2) -> to_int ((eval s e1) < (eval s e2))
+        | Binop (">", e1, e2) -> to_int ((eval s e1) > (eval s e2))
+        | Binop ("<=", e1, e2) -> to_int ((eval s e1) <= (eval s e2))
+        | Binop (">=", e1, e2) -> to_int ((eval s e1) >= (eval s e2))
+        | Binop ("+", e1, e2) -> (eval s e1) + (eval s e2)
+        | Binop ("-", e1, e2) -> (eval s e1) - (eval s e2)
+        | Binop ("*", e1, e2) -> (eval s e1) * (eval s e2)
+        | Binop ("/", e1, e2) -> (eval s e1) / (eval s e2)
+        | Binop ("%", e1, e2) -> (eval s e1) mod (eval s e2)
+        | _ -> failwith (Printf.sprintf "Incorrect BINOP")
+
+    (* Expression parser. You can use the following terminals:
+         IDENT   --- a non-empty identifier a-zA-Z[a-zA-Z0-9_]* as a string
+         DECIMAL --- a decimal constant [0-9]+ as a string
+   
+    *)
+
+    ostap (
+        const: x:DECIMAL {Const x};
+        var: x:IDENT {Var x};
+        (* binop: a:expr x:op b:expr {Binop (Token.repr x, a, b)}; *)
+        (* op: ("!!" | "&&" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "+" | "-" | "*" | "/" | "%"); *)
+        (* expr: binop | const | var; *)
+
+        expr: 
+            !(Util.expr
+                (fun x -> x)
+                [|
+                    `Lefta, [
+                              ostap("!!"), (fun x y -> Binop ("!!", x, y))
+                            ];
+                    `Lefta, [
+                              ostap("&&"), (fun x y -> Binop ("&&", x, y))
+                            ];
+                    `Nona,  [
+                              ostap("=="), (fun x y -> Binop ("==", x, y));
+                              ostap("!="), (fun x y -> Binop ("!=", x, y));
+                              ostap("<="), (fun x y -> Binop ("<=", x, y));
+                              ostap("<"),  (fun x y -> Binop ("<", x, y));
+                              ostap(">="), (fun x y -> Binop (">=", x, y));
+                              ostap(">"),  (fun x y -> Binop (">", x, y))
+                            ];
+                    `Lefta, [
+                              ostap("+"), (fun x y -> Binop ("+", x, y));
+                              ostap("-"), (fun x y -> Binop ("-", x, y))
+                            ];
+                    `Lefta, [
+                              ostap("*"), (fun x y -> Binop ("*", x, y));
+                              ostap("%"), (fun x y -> Binop ("%", x, y));
+                              ostap("/"), (fun x y -> Binop ("/", x, y))
+                            ];
+                    (* `Righta, []; *)
+                |]
+                primary
+            );
+        primary: var | const | -"(" expr -")";
+        parse: expr
+    )
+
 
     (* Expression parser. You can use the following terminals:
 
@@ -52,9 +124,6 @@ module Expr =
          DECIMAL --- a decimal constant [0-9]+ as a string
                                                                                                                   
     *)
-    ostap (                                      
-      parse: empty {failwith "Not yet implemented"}
-    )
     
   end
                     
@@ -82,12 +151,35 @@ module Stmt =
 
        Takes a configuration and a statement, and returns another configuration
     *)
-    let rec eval conf stmt = failwith "Not yet implemented"
+    let rec eval (c : config) (stm : t) : config = 
+    match stm with
+    | Seq (s1, s2) -> eval (eval c s1) s2
+    | Assign (s, exp) -> (
+        match c with
+        | (state, input, output) -> ((Expr.update s (Expr.eval state exp) state), input, output)
+    )
+    | Read s -> (
+        match c with
+        | (state, z :: input, output) -> ((Expr.update s z state), input, output)
+        | _ -> failwith (Printf.sprintf "Unexpected end of file")
+    )
+    | Write exp -> (
+        match c with
+        | (state, input, output) -> (state, input, output@[(Expr.eval state exp)])
+    )
                                
     (* Statement parser *)
     ostap (
-      parse: empty {failwith "Not yet implemented"}
+        expr: !(Expr.expr);
+        stmt: read | write | assign;
+        read: -"read" -"(" x:IDENT -")" {Read x};
+        write: -"write" -"(" x:(expr) -")" {Write x};
+        assign: x:IDENT -":=" y:(expr) {Assign (x, y)};
+        (* seq: x:stmt -";" y:stmt {Seq (x, y)}; *)
+        seq: <s::ss> : !(Util.listBy)[ostap (";")][stmt] {List.fold_left (fun ss s -> Seq (ss, s)) s ss};
+        parse: seq
     )
+
       
   end
 
