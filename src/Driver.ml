@@ -16,18 +16,6 @@ let parse infile =
     )
     (ostap (!(Language.parse) -EOF))
 
-let rec prog_to_str = function
-| (x::xs) -> let rest = prog_to_str xs in (
-  match x with
-  | SM.LD v -> [("LD " ^ v)] @ rest
-  | SM.ST v -> [("ST " ^ v)] @ rest
-  | SM.BINOP s -> [("BINOP " ^ s)] @ rest
-  | SM.CONST x -> [("CONST " ^ (string_of_int x))] @ rest
-  | SM.READ -> [("READ ")] @ rest
-  | SM.WRITE -> [("WRITE ")] @ rest
-)
-| [] -> []
-
 let main =
   try
     let interpret  = Sys.argv.(1) = "-i"  in
@@ -36,10 +24,11 @@ let main =
     let infile     = Sys.argv.(if not to_compile then 2 else 1) in
     match parse infile with
     | `Ok prog ->
+      (* List.iter (fun stmt -> (Printf.printf "%s\n" (Language.Stmt.show_t stmt))) [prog]; *)
       if to_compile
       then 
         let basename = Filename.chop_suffix infile ".expr" in
-        Printf.printf "The prog is:\n %s\n" (String.concat "; " (prog_to_str (SM.compile prog)));
+        (* Printf.printf "The prog is:\n %s\n" (String.concat "; " (List.map (SM.show_insn) (SM.compile prog) )); *)
         ignore @@ X86.build prog basename
       else 
 	let rec read acc =

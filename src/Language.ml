@@ -140,7 +140,7 @@ module Stmt =
     (* empty statement                  *) | Skip
     (* conditional                      *) | If     of Expr.t * t * t
     (* loop with a pre-condition        *) | While  of Expr.t * t
-    (* loop with a post-condition       *) (* add yourself *)  with show
+    (* loop with a post-condition       *) | DWhile of Expr.t * t  with show
                                                                     
     (* The type of configuration: a state, an input stream, an output stream *)
     type config = Expr.state * int list * int list 
@@ -167,15 +167,41 @@ module Stmt =
         match c with
         | (state, input, output) -> (state, input, output@[(Expr.eval state exp)])
     )
+    | Skip -> c
+    | If (e, s1, s2) -> (
+        match c with
+        | (state, input, output) -> if (Expr.eval state e) <> 0 then (eval c s1) else (eval c s2)
+    )
+    | While (e, s) -> (
+        match c with
+        | (state, input, output) -> if (Expr.eval state e) <> 0 then let c' = (eval c s) in (eval c' stm) else c
+    )
+    | DWhile (e, s) -> let (state, input, output) as c' = (eval c s) in (if (Expr.eval state e) == 0 then (eval c' stm) else c')
                                
-    (* Statement parser *)
+
+    let rec to_if_stm ifs els = match ifs with
+    | (e, s)::[] -> (match els with
+      | None -> If (e, s, Skip)
+      | Some s' -> If (e, s, s')
+    )
+    | (e, s)::xs -> let rest = to_if_stm xs els in If (e, s, rest)
+
     ostap (
         expr: !(Expr.expr);
-        stmt: read | write | assign;
+        stmt: read | write | assign | if_st | while_st | for_st | repeat_until | skip;
         read: -"read" -"(" x:IDENT -")" {Read x};
         write: -"write" -"(" x:(expr) -")" {Write x};
         assign: x:IDENT -":=" y:(expr) {Assign (x, y)};
-        (* seq: x:stmt -";" y:stmt {Seq (x, y)}; *)
+
+        if_st: -"if" e:expr -"then" s:seq elf:elif_st* els:else_st? -"fi" {to_if_stm ((e, s)::elf) els};
+        elif_st: -"elif" e:expr -"then" s:seq {(e, s)};
+        else_st: -"else" s:seq;
+
+        while_st: -"while" e:expr -"do" s:seq -"od" {While (e, s)};
+        for_st: -"for" pre:seq -"," e:expr -"," post:seq -"do" s:seq -"od" {Seq (pre, While (e, Seq (s, post)))};
+        repeat_until: -"repeat" s:seq -"until" e:expr {DWhile (e, s)};
+        skip: -"skip" {Skip};
+        
         seq: <s::ss> : !(Util.listBy)[ostap (";")][stmt] {List.fold_left (fun ss s -> Seq (ss, s)) s ss};
         parse: seq
     )
@@ -198,4 +224,4 @@ let eval p i =
   let _, _, o = Stmt.eval (Expr.empty, i, []) p in o
 
 (* Top-level parser *)
-let parse = Stmt.parse                                                     
+let parse = Stmt.parse

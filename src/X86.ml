@@ -97,6 +97,20 @@ let is_cmp = function
 | ">=" -> true
 | otherwise -> false
 
+let is_boolean = function
+| "&&" -> true
+| "!!" -> true
+| otherwise -> false
+
+let to_boolean ptr = 
+  [
+    Mov (ptr, eax);
+    Binop ("cmp", L 0, eax);
+    Mov (L 0, eax);
+    Set ("ne", "%al");
+    Binop ("&&", L 1, eax);
+    Mov (eax, ptr);
+  ]
 
 let is_div = function
 | "%" -> true
@@ -114,49 +128,62 @@ let suf_of_op = function
 
 let rec compile env = function 
 | [] -> (env, [])
-| (p::ps) -> (match p with
+| (p::ps) -> let c_env, c_com = (match p with
   | (CONST x) ->  let ptr, env' = env#allocate in
                   let commands = [Mov ((L x), ptr)] in
-                  let f_env, f_com = compile env' ps in
-                  (f_env, commands @ f_com)
+                  (env', commands)
   | (LD v) -> let ptr, env' = (env#global v)#allocate in
               let var = (env'#loc v) in
               let commands = match ptr with
               | R n -> [Mov ((M var), (R n))]
               | s -> [Mov ((M var), eax); Mov (eax, s)] in
-              let f_env, f_com = compile env' ps in
-              (f_env, commands @ f_com)
+              (env', commands)
   | (ST v) -> let ptr, env' = (env#global v)#pop in
               let var = (env'#loc v) in
               let commands = match ptr with
               | R n -> [Mov ((R n), (M var))]
               | s -> [Mov (s, eax); Mov (eax, (M var))] in
-              let f_env, f_com = compile env' ps in
-              (f_env, commands @ f_com)
+              (env', commands)
   | READ -> let ptr, env' = env#allocate in
             let commands = [Call "Lread"; Mov (eax, ptr)] in
-            let f_env, f_com = compile env' ps in
-            (f_env, commands @ f_com)
+            (env', commands)
   | WRITE -> let ptr, env' = env#pop in
              let commands = [Mov (ptr, eax); Push eax; Call "Lwrite"; Pop eax] in
-             let f_env, f_com = compile env' ps in
-             (f_env, commands @ f_com)
+             (env', commands)
+
   | BINOP op when (is_cmp op) -> let y, x, env' = (env#pop2) in
-                                 let ptr, env'' = (env#allocate) in
-                                 let commands = [Mov (x, eax); Mov (y, edi); Binop ("^", edx, edx); Binop ("cmp", edi, eax); Set (suf_of_op op, "%dl"); Mov (edx, ptr)] in 
-                                 let f_env, f_com = compile env'' ps in
-                                 (f_env, commands @ f_com)
+                                 let ptr, env'' = (env'#allocate) in
+                                 let commands = [Mov (x, eax); Binop ("cmp", y, eax); Mov (L 0, eax);
+                                                 Set (suf_of_op op, "%al"); Binop ("&&", L 1, eax); Mov (eax, ptr)]
+                                 in 
+                                 (env'', commands)
+  
   | BINOP op when (is_div op) -> let y, x, env' = (env#pop2) in
                                  let ptr, env'' = (env'#allocate) in
-                                 let commands = [Mov (x, eax); Cltd; Mov (y, edi); IDiv edi; Mov ((if op = "/" then eax else edx), ptr)] in
-                                 let f_env, f_com = compile env'' ps in
-                                 (f_env, commands @ f_com)
+                                 let commands = [Mov (x, eax); Cltd; IDiv y; Mov ((if op = "/" then eax else edx), ptr)] in
+                                 (env'', commands)
+
+  | BINOP op when (is_boolean op) -> let y, x, env' = (env#pop2) in
+                                     let ptr, env'' = (env'#allocate) in
+                                     let commands = (to_boolean x) @ (to_boolean y) @ [Mov (x, eax); Binop (op, y, eax); Mov (eax, ptr)] in
+                                     (env'', commands)
   | BINOP op -> let y, x, env' = (env#pop2) in
                 let ptr, env'' = (env'#allocate) in
-                let commands = [Mov (x, eax); Mov (y, edi); Binop (op, edi, eax); Mov (eax, ptr)] in
-                let f_env, f_com = compile env'' ps in
-                (f_env, commands @ f_com)
+                let commands = [Mov (x, eax); Binop (op, y, eax); Mov (eax, ptr)] in
+                (env'', commands)
+
+  | LABEL l ->  let commands = [Label l] in 
+                (env, commands)
+  | JMP l -> let commands = [Jmp l] in
+             (env, commands)
+  | CJMP (cond, l) -> let ptr, env' = (env#pop) in
+                      let commands = [Binop ("cmp", L 0, ptr); CJmp (cond, l)] in
+                      (env', commands)
 )
+             in
+             let f_env, f_com = compile c_env ps
+             in
+             (f_env, c_com @ f_com)
 
 (* A set of strings *)           
 module S = Set.Make (String)
@@ -174,14 +201,14 @@ class env =
     (* allocates a fresh position on a symbolic stack *)
     method allocate =    
       let x, n =
-  let rec allocate' = function
-  | []                                -> ebx     , 0
-  | (S n)::_                          -> S (n+1) , n+2
-  | (R n)::_ when n < num_of_regs - 1 -> R (n+1) , 0
-  | (M _)::s                          -> allocate' s
-  | _                                 -> S 0     , 1
-  in
-  allocate' stack
+        let rec allocate' = function
+        | []                                -> R 0     , 0
+        | (S n)::_                          -> S (n+1) , n+2
+        | (R n)::_ when n < num_of_regs - 1 -> R (n+1) , 0
+        | (M _)::s                          -> allocate' s
+        | _                                 -> S 0     , 1
+        in
+        allocate' stack
       in
       x, {< stack_slots = max n stack_slots; stack = x::stack >}
 
@@ -195,7 +222,7 @@ class env =
     method pop2 = let x::y::stack' = stack in x, y, {< stack = stack' >}
 
     (* registers a global variable in the environment *)
-    method global x  = {< globals = S.add ("global_" ^ x) globals >}
+    method global x  = {< globals = S.add (self#loc x) globals >}
 
     (* gets the number of allocated stack slots *)
     method allocated = stack_slots

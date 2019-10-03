@@ -45,7 +45,7 @@ let binop_exec (op : string) (y : int) (x : int) : int = match op with
     | "%" -> x mod y
     | _ -> failwith "Incorrect binop code"
 
-let rec exec (c : config) (order : insn) : config = match order, c with
+let exec (c : config) (order : insn) : config = (* (Printf.printf "%s\n" (show_insn order)); *) match order, c with
     | CONST v, (stack, synconf) -> (v :: stack, synconf)
     | BINOP op, (y :: x :: stack, synconf) -> ((binop_exec op y x) :: stack, synconf)
     | BINOP op, _ -> failwith "There are no two needed values on the stack"
@@ -56,10 +56,21 @@ let rec exec (c : config) (order : insn) : config = match order, c with
     | LD s, (stack, (state, input, output)) -> ((state s) :: stack, (state, input, output))
     | ST s, (z :: stack, (state, input, output)) -> (stack, ((Language.Expr.update s z state), input, output))
     | ST s, _ -> failwith "Empty stack on store operation"
+    | otherwise -> failwith "Attempt to exec control instruction"
 
 
+let rec prt ps_t = match ps_t with
+| [] -> ""
+| (x::xs) -> (show_insn x) ^ "\n" ^ (prt xs)
 
-let rec eval env c p = List.fold_left exec c p
+let rec eval env c p = match p with
+| [] -> c
+| (LABEL l)::ps -> eval env c ps
+| (JMP l)::ps -> (* Printf.printf "jmp %s\n" l; *) eval env c (env#labeled l)
+| (CJMP (cond, l))::ps -> let (z::stack, stm_c) = c in (if (z = 0) = (cond = "z") 
+                                                        then ((* Printf.printf "cjmp %s\n" l; *) eval env (stack, stm_c) (env#labeled l))
+                                                        else (eval env (stack, stm_c) ps))
+| inst::ps -> let c' = exec c inst in eval env c' ps
 
 (* Top-level evaluation
 
@@ -84,14 +95,53 @@ let run p i =
    Takes a program in the source language and returns an equivalent program for the
    stack machine
 *)
-let rec compile =
-  let rec expr = function
-  | Expr.Var   x          -> [LD x]
-  | Expr.Const n          -> [CONST n]
-  | Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
-  in
-  function
-  | Stmt.Seq (s1, s2)  -> compile s1 @ compile s2
-  | Stmt.Read x        -> [READ; ST x]
-  | Stmt.Write e       -> expr e @ [WRITE]
-  | Stmt.Assign (x, e) -> expr e @ [ST x]
+
+
+class comp_env =
+  object(self)
+    val cnt : int ref = Base.ref 0
+    val end_label : string = ""
+
+    method fresh_label = cnt := (!cnt) + 1; "label_" ^ (string_of_int (!cnt))
+
+    method get_label = end_label
+    method set_label s = {< end_label = s >}
+
+  end
+
+let rec compile (ps : Stmt.t) =
+  let rec compile' (env : comp_env) =
+    let rec expr = function
+    | Expr.Var   x          -> [LD x]
+    | Expr.Const n          -> [CONST n]
+    | Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
+    in
+    function
+    | Stmt.Seq (s1, s2)  -> let _, res1 = compile' (env#set_label "") s1 in 
+                            let _, res2 = compile' env s2 in
+                            (env, res1 @ res2)
+    | Stmt.Read x        -> (env, [READ; ST x])
+    | Stmt.Write e       -> (env, expr e @ [WRITE])
+    | Stmt.Assign (x, e) -> (env, expr e @ [ST x])
+    | Stmt.Skip          -> (env, [])
+    | Stmt.DWhile (e, s) -> let new_label = env#fresh_label in
+                            let _, res = compile' env s in
+                            (env, [LABEL new_label] @ res @ expr e @ [CJMP ("z", new_label)]) 
+    | Stmt.While (e, s) -> let new_label1 = env#fresh_label in
+                           let new_label2 = env#fresh_label in
+                           let _, res = compile' env s in
+                           (env, [LABEL new_label1] @ expr e @ [CJMP ("z", new_label2)] @ res @ [JMP new_label1; LABEL new_label2])
+    | Stmt.If (e, s1, s2) -> let true_label = env#fresh_label in
+                             let cur_end_label = env#get_label in
+                             let env', end_label = if cur_end_label = ""
+                                                   then (let str = env#fresh_label in
+                                                   ((env#set_label str), str))
+                                                   else (env, cur_end_label) in
+                             let env'', res1 = compile' env' s1 in
+                             let env3d, res2 = compile' env'' s2 in
+                             let end_label_command = if cur_end_label = "" then [LABEL end_label] else [] in
+                             (env3d, expr e @ [CJMP ("nz", true_label)] @ res2 @ [JMP end_label; LABEL true_label] @ res1 @ end_label_command)
+
+                             
+  in 
+  let env, res = compile' (new comp_env) ps in res
