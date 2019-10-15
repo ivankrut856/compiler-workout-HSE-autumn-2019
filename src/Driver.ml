@@ -26,9 +26,9 @@ let main =
     let infile     = Sys.argv.(if not to_compile then 2 else 1) in
     match parse infile with
     | `Ok prog ->
-      let (defs, body) = prog in(* 
-      List.iter (fun elem -> Printf.printf "%s" (show_def elem)) (defs);
-      Printf.printf "%s" (Language.Stmt.show_t body); *)
+      let (defs, body) = prog in
+      (* List.iter (fun elem -> Printf.printf "%s" (show_def elem)) (defs); *)
+      (* Printf.printf "%s" (Language.Stmt.show_t body); *)
       (* Printf.eprintf "%s" (SM.prt (SM.compile prog)); *)
       (* Printf.eprintf "ENF OF PROGRAM\n\n\n"; *)
       if to_compile

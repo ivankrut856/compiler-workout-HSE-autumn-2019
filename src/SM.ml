@@ -73,8 +73,15 @@ let split list n =
       | h :: t as l -> if i = 0 then List.rev acc, l
                        else aux (i-1) (h :: acc) t  in
     aux n [] list
+(* 
+let head_or_d list d = match list with
+| [] -> d
+| (x::xs) -> x *)
 
-let rec eval env c p = match p with
+let head (x::xs) = x
+
+let rec eval env c p = (* Printf.eprintf "%s\n" (if (List.length p) = 0 then "EOP" else (show_insn (head p))); *)
+match p with
 | [] -> c
 | (LABEL l)::ps -> eval env c ps
 | (JMP l)::ps -> (* Printf.printf "jmp %s\n" l; *) eval env c (env#labeled l)
@@ -139,7 +146,7 @@ class comp_env =
 
   end
 
-let rec compile_p (ps : Stmt.t) =
+let rec compile_p (ps : Stmt.t) (env : comp_env) =
   let rec compile' (env : comp_env) =
     let rec expr = function
     | Expr.Var   x          -> [LD x]
@@ -177,16 +184,18 @@ let rec compile_p (ps : Stmt.t) =
 
 
   in 
-  let env, res = compile' (new comp_env) ps in res
+  compile' (env) ps
 
 
 
 let compile (defs, prg) =
-  (* let rec compile_p prg = [] in *)
-  let compile_d (f, (args, locals, body)) =
-    let body_code = compile_p body in
+  let start_env = new comp_env in
+  let compile_d (f, (args, locals, body)) env =
+    let (env, body_code) = compile_p body env in
     let prolog = [LABEL ("func_" ^ f); BEGIN (args, locals)] in
     let epilog = [END] in
-    prolog @ body_code @ epilog
+    (env, prolog @ body_code @ epilog)
   in
-  (List.concat (List.map (compile_d) defs)) @ [LABEL "func_main"] @ (compile_p prg)
+  let (env, defs_compiled) = List.fold_left (fun (env, acc) def -> let (env', def_compiled) = compile_d def env in (env', acc @ def_compiled)) (start_env, []) defs in
+  let (_, main_compiled) = compile_p prg env in
+  defs_compiled @ [LABEL "func_main"] @ main_compiled
