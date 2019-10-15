@@ -252,8 +252,8 @@ module Definition =
     ostap (                                      
       
       def: -"fun" f:IDENT -"(" args:ident_list -")" locals:local -"{" body:!(Stmt.parse) -"}" {(f, (args, locals, body))};
-      local: "" {[]} | -"local" ident_list;
-      ident_list: "" {[]} | !(Util.listBy)[ostap (",")][ident];
+      local: -"local" ident_list | "" {[]} ;
+      ident_list: !(Util.listBy)[ostap (",")][ident] | "" {[]} ;
       ident: IDENT;
 
       parse: def
