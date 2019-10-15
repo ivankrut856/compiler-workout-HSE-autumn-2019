@@ -5,6 +5,7 @@ open GT
 
 (* Opening a library for combinator-based syntax analysis *)
 open Ostap.Combinators
+open Ostap
 
 (* States *)
 module State =
@@ -62,7 +63,13 @@ module Expr =
  
        Takes a state and an expression, and returns the value of the expression in 
        the given state.
-    *)                                                       
+    *)                    
+
+    
+    let to_bool x = if x = 0 then false else true
+    let to_int (x : bool) : int = if x then 1 else 0
+
+                                   
     let to_func op =
       let bti   = function true -> 1 | _ -> 0 in
       let itb b = b <> 0 in
@@ -95,13 +102,13 @@ module Expr =
          DECIMAL --- a decimal constant [0-9]+ as a string
                                                                                                                   
     *)
-    ostap (                                      
+(*    ostap (                                      
       parse:
 	  !(Ostap.Util.expr 
              (fun x -> x)
 	     (Array.map (fun (a, s) -> a, 
                            List.map  (fun s -> ostap(- $(s)), (fun x y -> Binop (s, x, y))) s
-                        ) 
+                        )
               [|                
 		`Lefta, ["!!"];
 		`Lefta, ["&&"];
@@ -116,6 +123,45 @@ module Expr =
         n:DECIMAL {Const n}
       | x:IDENT   {Var x}
       | -"(" parse -")"
+    ) *)
+
+    ostap (
+      const: x:DECIMAL {Const x};
+      var: x:IDENT {Var x};
+
+      expr: 
+          !(Util.expr
+              (fun x -> x)
+              [|
+                  `Lefta, [
+                            ostap("!!"), (fun x y -> Binop ("!!", x, y))
+                          ];
+                  `Lefta, [
+                            ostap("&&"), (fun x y -> Binop ("&&", x, y))
+                          ];
+                  `Nona,  [
+                            ostap("=="), (fun x y -> Binop ("==", x, y));
+                            ostap("!="), (fun x y -> Binop ("!=", x, y));
+                            ostap("<="), (fun x y -> Binop ("<=", x, y));
+                            ostap("<"),  (fun x y -> Binop ("<", x, y));
+                            ostap(">="), (fun x y -> Binop (">=", x, y));
+                            ostap(">"),  (fun x y -> Binop (">", x, y))
+                          ];
+                  `Lefta, [
+                            ostap("+"), (fun x y -> Binop ("+", x, y));
+                            ostap("-"), (fun x y -> Binop ("-", x, y))
+                          ];
+                  `Lefta, [
+                            ostap("*"), (fun x y -> Binop ("*", x, y));
+                            ostap("%"), (fun x y -> Binop ("%", x, y));
+                            ostap("/"), (fun x y -> Binop ("/", x, y))
+                          ];
+                  (* `Righta, []; *)
+              |]
+              primary
+          );
+      primary: var | const | -"(" expr -")";
+      parse: expr
     )
     
   end
@@ -150,13 +196,73 @@ module Stmt =
 
        which returns a list of formal parameters and a body for given definition
     *)
-    let rec eval _ = failwith "Not Implemented Yet"
-                                
-    (* Statement parser *)
-    ostap (                                      
-      parse: empty {failwith "Not yet implemented"}
+
+    let rec eval env (c : config) (stm : t) : config = 
+    match stm with
+    | Seq (s1, s2) -> eval env (eval env c s1) s2
+    | Assign (s, exp) -> (
+        match c with
+        | (state, input, output) -> ((State.update s (Expr.eval state exp) state), input, output)
     )
-      
+    | Read s -> (
+        match c with
+        | (state, z :: input, output) -> ((State.update s z state), input, output)
+        | _ -> failwith (Printf.sprintf "Unexpected end of file")
+    )
+    | Write exp -> (
+        match c with
+        | (state, input, output) -> (state, input, output@[(Expr.eval state exp)])
+    )
+    | Skip -> c
+    | If (e, s1, s2) -> (
+        match c with
+        | (state, input, output) -> if (Expr.eval state e) <> 0 then (eval env c s1) else (eval env c s2)
+    )
+    | While (e, s) -> (
+        match c with
+        | (state, input, output) -> if (Expr.eval state e) <> 0 then let c' = (eval env c s) in (eval env c' stm) else c
+    )
+    | Repeat (s, e) -> let (state, input, output) as c' = (eval env c s) in (if (Expr.eval state e) == 0 then (eval env c' stm) else c')
+    | Call (f, factual_args) -> let (state, input, output) = c in
+                                let (formal_args, locals, body) = env#definition f in
+                                let scope = (locals @ formal_args) in
+                                let scoped_state = State.push_scope state scope in
+                                let function_state = List.fold_left (fun acc (factual, formal) -> State.update formal (Expr.eval state factual) acc) scoped_state (List.combine factual_args formal_args) in
+                                let (state', input', output') = eval env (function_state, input, output) body in
+                                (State.drop_scope state' state, input', output')
+
+                          
+
+    let rec to_if_stm ifs els = match ifs with
+    | (e, s)::[] -> (match els with
+      | None -> If (e, s, Skip)
+      | Some s' -> If (e, s, s')
+    )
+    | (e, s)::xs -> let rest = to_if_stm xs els in If (e, s, rest)
+
+    ostap (
+        expr: !(Expr.expr);
+        stmt: read | write | assign | if_st | while_st | for_st | repeat_until | call | skip;
+        read: -"read" -"(" x:IDENT -")" {Read x};
+        write: -"write"  -"(" x:(expr) -")" {Write x};
+        assign: x:IDENT -":=" y:(expr) {Assign (x, y)};
+
+        if_st: -"if" e:expr -"then" s:seq elf:elif_st* els:else_st? -"fi" {to_if_stm ((e, s)::elf) els};
+        elif_st: -"elif" e:expr -"then" s:seq {(e, s)};
+        else_st: -"else" s:seq;
+
+        while_st: -"while" e:expr -"do" s:seq -"od" {While (e, s)};
+        for_st: -"for" pre:seq -"," e:expr -"," post:seq -"do" s:seq -"od" {Seq (pre, While (e, Seq (s, post)))};
+        repeat_until: -"repeat" s:seq -"until" e:expr {Repeat (s, e)};
+
+        call: f:IDENT -"(" args:expr* -")" {Call (f, args)};
+
+        skip: -"skip" {Skip}; 
+
+        seq: <s::ss> : !(Util.listBy)[ostap (";")][stmt] {List.fold_left (fun ss s -> Seq (ss, s)) s ss};
+        parse: seq
+
+    )
   end
 
 (* Function and procedure definitions *)
@@ -167,7 +273,13 @@ module Definition =
     type t = string * (string list * string list * Stmt.t)
 
     ostap (                                      
-      parse: empty {failwith "Not yet implemented"}
+      
+      def: -"fun" f:IDENT -"(" args:ident_list -")" locals:local -"{" body:!(Stmt.parse) -"}" {(f, (args, locals, body))};
+      local: "" {[]} | -"local" ident_list;
+      ident_list: "" {[]} | !(Util.listBy)[ostap (",")][ident];
+      ident: IDENT;
+
+      parse: def
     )
 
   end

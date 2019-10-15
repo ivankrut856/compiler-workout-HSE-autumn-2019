@@ -16,6 +16,8 @@ let parse infile =
     )
     (ostap (!(Language.parse) -EOF))
 
+let show_def (s, (a, l, b)) = "fun " ^ s ^ "(" ^ (String.concat ", " a) ^ ")" ^ "\nlocal " ^ (String.concat ", " l) ^ " {\n" ^ (Language.Stmt.show_t b) ^ "\n}\n"
+
 let main =
   try
     let interpret  = Sys.argv.(1) = "-i"  in
@@ -24,6 +26,11 @@ let main =
     let infile     = Sys.argv.(if not to_compile then 2 else 1) in
     match parse infile with
     | `Ok prog ->
+      let (defs, body) = prog in(* 
+      List.iter (fun elem -> Printf.printf "%s" (show_def elem)) (defs);
+      Printf.printf "%s" (Language.Stmt.show_t body); *)
+      (* Printf.eprintf "%s" (SM.prt (SM.compile prog)); *)
+      (* Printf.eprintf "ENF OF PROGRAM\n\n\n"; *)
       if to_compile
       then failwith "Not implemented yet"
         (*            
@@ -40,7 +47,7 @@ let main =
 	in
 	let input = read [] in	
 	let output = 
-	  if interpret 
+	  if interpret
 	  then Language.eval prog input 
 	  else SM.run (SM.compile prog) input
 	in
