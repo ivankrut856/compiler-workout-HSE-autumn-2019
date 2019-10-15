@@ -102,29 +102,6 @@ module Expr =
          DECIMAL --- a decimal constant [0-9]+ as a string
                                                                                                                   
     *)
-(*    ostap (                                      
-      parse:
-	  !(Ostap.Util.expr 
-             (fun x -> x)
-	     (Array.map (fun (a, s) -> a, 
-                           List.map  (fun s -> ostap(- $(s)), (fun x y -> Binop (s, x, y))) s
-                        )
-              [|                
-		`Lefta, ["!!"];
-		`Lefta, ["&&"];
-		`Nona , ["=="; "!="; "<="; "<"; ">="; ">"];
-		`Lefta, ["+" ; "-"];
-		`Lefta, ["*" ; "/"; "%"];
-              |] 
-	     )
-	     primary);
-      
-      primary:
-        n:DECIMAL {Const n}
-      | x:IDENT   {Var x}
-      | -"(" parse -")"
-    ) *)
-
     ostap (
       const: x:DECIMAL {Const x};
       var: x:IDENT {Var x};
@@ -163,7 +140,7 @@ module Expr =
       primary: var | const | -"(" expr -")";
       parse: expr
     )
-    
+
   end
                     
 (* Simple statements: syntax and sematics *)

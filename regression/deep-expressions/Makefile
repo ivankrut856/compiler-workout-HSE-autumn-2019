@@ -1,17 +1,17 @@
-TESTS=$(basename $(wildcard generated*.expr))
+TESTS=$(basename $(wildcard test*.expr))
 
-RC = ../../src/rc.opt
+RC=../src/rc.opt
 
-.PHONY: check $(TESTS)
+.PHONY: check $(TESTS) 
 
 check: $(TESTS)
 
 $(TESTS): %: %.expr
-# 	@RC_RUNTIME=../../runtime $(RC) $< && cat $@.input | ./$@ > $@.log && diff $@.log orig/$@.log
+#	@$(RC) $< && cat $@.input | ./$@ > $@.log && diff $@.log orig/$@.log
 	@cat $@.input | $(RC) -i $< > $@.log && diff $@.log orig/$@.log
 	@cat $@.input | $(RC) -s $< > $@.log && diff $@.log orig/$@.log
 
 clean:
-	find . -maxdepth 1 -name "*.log" -delete
-	find . -maxdepth 1 -type f -not -name '*.*' -not -name 'Makefile' -delete
-	rm -f *.s *~
+	$(RM) test*.log *.s *~ $(TESTS)
+	$(MAKE) clean -C expressions
+	$(MAKE) clean -C deep-expressions
