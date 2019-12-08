@@ -1,4 +1,5 @@
 open Ostap
+open Language.Stmt
 
 let parse infile =
   let s = Util.read infile in
@@ -26,6 +27,10 @@ let main =
     let infile     = Sys.argv.(if not to_compile then 2 else 1) in
     match parse infile with
     | `Ok prog ->
+
+      (* let (defs, main_st) = prog in *)
+      (* Printf.eprintf "%s" (Language.Stmt.show_t main_st); *)
+
       if to_compile
       then            
         let basename = Filename.chop_suffix infile ".expr" in
@@ -39,7 +44,7 @@ let main =
           with End_of_file -> acc
 	in
 	let input = read [] in	
-	let output = 
+	let output =
 	  if interpret 
 	  then Language.eval prog input 
 	  else SM.run (SM.compile prog) input
