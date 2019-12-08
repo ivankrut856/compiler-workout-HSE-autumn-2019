@@ -12,6 +12,7 @@ open Language
 (* a label                         *) | LABEL of string
 (* unconditional jump              *) | JMP   of string
 (* conditional jump                *) | CJMP  of string * string
+
 (* begins procedure definition     *) | BEGIN of string * string list * string list
 (* end procedure definition        *) | END
 (* calls a function/procedure      *) | CALL  of string * int * bool
@@ -84,6 +85,8 @@ match p with
   else (eval env (control_stack, stack, stm_c) ps)
 )
 | (END)::ps -> 
+  let (cs, _, _) = c in
+  if List.length cs = 0 then c else
   let ((ret_prg, ret_state)::control_stack, stack, stm_c) = c in 
   let left_c = let (state, input, output, _) = stm_c in (Language.State.leave state ret_state, input, output, None) in
   eval env (control_stack, stack, left_c) ret_prg
@@ -122,7 +125,7 @@ let run p i =
   in
   let m = make_map M.empty p in
   let start_env = object method labeled l = M.find l m end in
-  let (_, _, (_, _, o, _)) = eval start_env ([], [], (State.empty, i, [], None)) (start_env#labeled "func_main") in o
+  let (_, _, (_, _, o, _)) = eval start_env ([], [], (State.empty, i, [], None)) p in o
 
 (* Stack machine compiler
 
@@ -206,4 +209,4 @@ let compile (defs, prg) =
   in
   let (env, defs_compiled) = List.fold_left (fun (env, acc) def -> let (env', def_compiled) = compile_d def env in (env', acc @ def_compiled)) (start_env, []) defs in
   let (_, main_compiled) = compile_p prg env in
-  defs_compiled @ [LABEL "func_main"] @ main_compiled
+  main_compiled @ [END] @ defs_compiled
