@@ -39,7 +39,86 @@ let split n l =
   in
   unzip ([], l) n
         
-let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) prg = failwith "Not implemented"
+
+let rec prt ps_t = match ps_t with
+| [] -> ""
+| (x::xs) -> (show_insn x) ^ "\n" ^ (prt xs)
+
+(* Stack machine interpreter
+     val eval : env -> config -> prg -> config
+   Takes an environment, a configuration and a program, and returns a configuration as a result. The
+   environment is used to locate a label to jump to (via method env#labeled <label_name>)
+*)                                                  
+
+let binop_exec (op : string) (y : int) (x : int) : int = match op with
+    | "!!" -> Language.Expr.to_int ((Language.Expr.to_bool x) || (Language.Expr.to_bool y))
+    | "&&" -> Language.Expr.to_int ((Language.Expr.to_bool x) && (Language.Expr.to_bool y))
+    | "==" -> Language.Expr.to_int (x = y)
+    | "!=" -> Language.Expr.to_int (x <> y)
+    | "<" -> Language.Expr.to_int (x < y)
+    | ">" -> Language.Expr.to_int (x > y)
+    | "<=" -> Language.Expr.to_int (x <= y)
+    | ">=" -> Language.Expr.to_int (x >= y)
+    | "+" -> x + y
+    | "-" -> x - y
+    | "*" -> x * y
+    | "/" -> x / y
+    | "%" -> x mod y
+    | _ -> failwith "Incorrect binop code"
+
+let rec eval env (c : config) p = (* Printf.eprintf "%s\n" (if (List.length p) = 0 then "EOP" else (show_insn (List.hd p))); *)
+  match p with
+  | [] -> c
+  | (CONST v)::ps -> let (control_stack, stack, (st, i, o, _)) = c in
+                     eval env (control_stack, (Int v)::stack, (st, i, o, None)) ps
+  | (BINOP op)::ps -> let (control_stack, (Int y)::(Int x)::stack, (st, i, o, _)) = c in 
+                      eval env (control_stack, (Int (binop_exec op y x))::stack, (st, i, o, None)) ps
+  | (LD s)::ps -> let (control_stack, stack, (state, input, output, _)) = c in
+                  eval env (control_stack, (Language.State.eval state s)::stack, (state, input, output, None)) ps
+  | (ST s)::ps -> let (control_stack, z::stack, (state, input, output, _)) = c in
+                  eval env (control_stack, stack, ((Language.State.update s z state), input, output, None)) ps
+  | (LABEL l)::ps -> eval env c ps
+  | (JMP l)::ps -> (* Printf.printf "jmp %s\n" l; *) eval env c (env#labeled l)
+  | (CJMP (cond, l))::ps -> let (control_stack, (Int z)::stack, stm_c) = c in (
+    if (z = 0) = (cond = "z") 
+    then ((* Printf.printf "cjmp %s\n" l; *) eval env (control_stack, stack, stm_c) (env#labeled l))
+    else (eval env (control_stack, stack, stm_c) ps)
+  )
+  | (END)::ps -> 
+    let (cs, _, _) = c in
+    if List.length cs = 0 then c else
+    let ((ret_prg, ret_state)::control_stack, stack, stm_c) = c in 
+    let left_c = let (state, input, output, _) = stm_c in (Language.State.leave state ret_state, input, output, None) in
+    eval env (control_stack, stack, left_c) ret_prg
+  | (BEGIN (f, args, locals))::ps ->
+    let arity = (List.length args) in
+    let (control_stack, stack, (state, input, output, _)) = c in
+    let (factual_args_rev, new_stack) = split arity stack in
+    let factual_args = List.rev factual_args_rev in
+    let new_scope = args @ locals in
+    let new_state = List.fold_left (fun acc (factual, formal) -> Language.State.update formal factual acc) (Language.State.enter state new_scope) (List.combine factual_args args) in
+    eval env (control_stack, new_stack, (new_state, input, output, None)) ps
+  | (CALL (f, arity, has_value))::ps ->
+    (* Printf.eprintf "%s\n" ("calls " ^ f); *)
+    let (cs, stack, (st, i, o, _)) = c in
+    if env#is_label f then
+      eval env ((ps, st)::cs, stack, (st, i, o, None)) (env#labeled f)
+    else
+      let (cs, stack, (st, i, o)) = env#builtin (cs, stack, (st, i, o)) f arity (not has_value) in
+      eval env (cs, stack, (st, i, o, None)) ps
+  | (RET has_value)::ps ->
+    let ((ret_prg, ret_state)::control_stack, stack, stm_c) = c in
+    let left_c =  let (st, i, o, _) = stm_c in (Language.State.leave st ret_state, i, o, None) in
+    eval env (control_stack, stack, left_c) ret_prg
+  | (STRING s)::ps ->
+    let (cs, st, cfg) = c in
+    eval env (cs, (String s) :: st, cfg) ps
+  | (STA (x, n))::ps ->
+    let (cs, stack, (st, i, o, _)) = c in 
+    let (v::inds, stack') = split (n + 1) stack in
+    (* List.iter (fun (Language.Value.Int x) -> Printf.eprintf "%d\n" x) (v::inds); *)
+    let st' = Language.Stmt.update st x v (List.rev inds) in
+    eval env (cs, stack', (st', i, o, None)) ps
 
 (* Top-level evaluation
 
@@ -55,13 +134,14 @@ let run p i =
   | _ :: tl         -> make_map m tl
   in
   let m = make_map M.empty p in
-  let (_, _, (_, _, o)) =
+  let (_, _, (_, _, o, _)) =
     eval
       (object
          method is_label l = M.mem l m
          method labeled l = M.find l m
          method builtin (cstack, stack, (st, i, o)) f n p =
            let f = match f.[0] with 'L' -> String.sub f 1 (String.length f - 1) | _ -> f in
+           let f = match String.sub f 0 5 with "func_" -> String.sub f 5 (String.length f - 5) | _ -> f in
            let args, stack' = split n stack in
            let (st, i, o, r) = Language.Builtin.eval (st, i, o, None) (List.rev args) f in
            let stack'' = if p then stack' else let Some r = r in r::stack' in
@@ -69,7 +149,7 @@ let run p i =
            (cstack, stack'', (st, i, o))
        end
       )
-      ([], [], (State.empty, i, []))
+      ([], [], (State.empty, i, [], None))
       p
   in
   o
@@ -81,4 +161,88 @@ let run p i =
    Takes a program in the source language and returns an equivalent program for the
    stack machine
 *)
-let compile (defs, p) = failwith "Not implemented"
+
+class comp_env =
+  object(self)
+    val cnt : int ref = Base.ref 0
+    val end_label : string = ""
+
+    method fresh_label = cnt := (!cnt) + 1; "label_" ^ (string_of_int (!cnt))
+
+    method get_label = end_label
+    method set_label s = {< end_label = s >}
+
+  end
+
+
+let rec compile_p (ps : Stmt.t) (env : comp_env) =
+  let rec compile' (env : comp_env) =
+    let rec expr = function
+    | Expr.Var   x          -> [LD x]
+    | Expr.Const n          -> [CONST n]
+    | Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
+    | Expr.Call (f, e) -> let compute_args = List.concat (List.map expr e) in
+                          let args_len = List.length e in
+                          let call_stmt = [CALL ("func_" ^ f, args_len, true)] in
+                          compute_args @ call_stmt
+    | Expr.Length e -> let compute_e = expr e in
+                       let call_stmt = [CALL ("$length", 1, true)] in
+                       compute_e @ call_stmt
+    | Expr.Array elems -> let compute_elems = List.concat (List.map expr elems) in
+                          let arr_len = List.length elems in 
+                          let call_stmt = [CALL ("$array", arr_len, true)] in
+                          compute_elems @ call_stmt
+    | Expr.String s -> [STRING s]
+    | Expr.Elem (x, i) -> expr x @ expr i @ [CALL ("$elem", 2, true)]
+    in
+    function
+    | Stmt.Seq (s1, s2)  -> let _, res1 = compile' (env#set_label "") s1 in 
+                            let _, res2 = compile' env s2 in
+                            (env, res1 @ res2)
+    | Stmt.Assign (x, inds, e) -> (match inds with
+      | [] -> (env, expr e @ [ST x])
+      | _ -> let compute_inds = List.concat (List.map expr inds) in
+             let inds_len = List.length inds in
+             (env, compute_inds @ expr e @ [STA (x, inds_len)])
+    )
+    | Stmt.Skip          -> (env, [])
+    | Stmt.Repeat (s, e) -> let new_label = env#fresh_label in
+                            let _, res = compile' env s in
+                            (env, [LABEL new_label] @ res @ expr e @ [CJMP ("z", new_label)]) 
+    | Stmt.While (e, s) -> let new_label1 = env#fresh_label in
+                           let new_label2 = env#fresh_label in
+                           let _, res = compile' env s in
+                           (env, [LABEL new_label1] @ expr e @ [CJMP ("z", new_label2)] @ res @ [JMP new_label1; LABEL new_label2])
+    | Stmt.If (e, s1, s2) -> let true_label = env#fresh_label in
+                             let cur_end_label = env#get_label in
+                             let env', end_label = if cur_end_label = ""
+                                                   then (let str = env#fresh_label in
+                                                   ((env#set_label str), str))
+                                                   else (env, cur_end_label) in
+                             let env'', res1 = compile' env' s1 in
+                             let env3d, res2 = compile' env'' s2 in
+                             let end_label_command = if cur_end_label = "" then [LABEL end_label] else [] in
+                             (env3d, expr e @ [CJMP ("nz", true_label)] @ res2 @ [JMP end_label; LABEL true_label] @ res1 @ end_label_command)
+    | Stmt.Call (f, e) -> let compute_args = List.concat (List.map (expr) e) in
+                          let args_len = List.length e in
+                          let call_stmt = [CALL ("func_" ^ f, args_len, false)] in
+                          (env, compute_args @ call_stmt)
+    | Stmt.Return e -> (match e with
+      | None -> (env, [RET false])
+      | Some e -> (env, expr e @ [RET true])
+    )
+  in 
+  compile' env ps
+
+
+let compile (defs, prg) =
+  let start_env = new comp_env in
+  let compile_d (f, (args, locals, body)) env =
+    let (env, body_code) = compile_p body env in
+    let prolog = [LABEL ("func_" ^ f); BEGIN ("func_" ^ f, args, locals)] in
+    let epilog = [END] in
+    (env, prolog @ body_code @ epilog)
+  in
+  let (env, defs_compiled) = List.fold_left (fun (env, acc) def -> let (env', def_compiled) = compile_d def env in (env', acc @ def_compiled)) (start_env, []) defs in
+  let (_, main_compiled) = compile_p prg env in
+  main_compiled @ [END] @ defs_compiled
