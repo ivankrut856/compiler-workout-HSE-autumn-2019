@@ -172,7 +172,6 @@ let run p i =
          method labeled l = M.find l m
          method builtin (cstack, stack, (st, i, o)) f n p =
            let f = match f.[0] with 'L' -> String.sub f 1 (String.length f - 1) | _ -> f in
-           let f = match String.sub f 0 5 with "func_" -> String.sub f 5 (String.length f - 5) | _ -> f in
            let args, stack' = split n stack in
            let (st, i, o, r) = Language.Builtin.eval (st, i, o, None) (List.rev args) f in
            let stack'' = if p then stack' else let Some r = r in r::stack' in
@@ -213,7 +212,7 @@ let rec compile_p (ps : Stmt.t) (env : comp_env) =
     | Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
     | Expr.Call (f, e) -> let compute_args = List.concat (List.map expr e) in
                           let args_len = List.length e in
-                          let call_stmt = [CALL ("func_" ^ f, args_len, true)] in
+                          let call_stmt = [CALL ("L" ^ f, args_len, true)] in
                           compute_args @ call_stmt
     | Expr.Length e -> let compute_e = expr e in
                        let call_stmt = [CALL (".length", 1, true)] in
@@ -259,7 +258,7 @@ let rec compile_p (ps : Stmt.t) (env : comp_env) =
                              (env3d, expr e @ [CJMP ("nz", true_label)] @ res2 @ [JMP end_label; LABEL true_label] @ res1 @ end_label_command)
     | Stmt.Call (f, e) -> let compute_args = List.concat (List.map (expr) e) in
                           let args_len = List.length e in
-                          let call_stmt = [CALL ("func_" ^ f, args_len, false)] in
+                          let call_stmt = [CALL ("L" ^ f, args_len, false)] in
                           (env, compute_args @ call_stmt)
     | Stmt.Return e -> (match e with
       | None -> (env, [RET false])

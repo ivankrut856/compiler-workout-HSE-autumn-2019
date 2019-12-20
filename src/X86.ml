@@ -144,8 +144,8 @@ let suf_of_op = function
 let perform_call env f arity is_func = 
   let f = if (String.sub f 0 1) = "."
           then "B" ^ String.sub f 1 (String.length f - 1)
-          else if (String.sub f 0 5) = "func_"
-          then "L" ^ String.sub f 5 (String.length f - 5)
+          else if (String.sub f 0 1) = "L"
+          then "L" ^ String.sub f 1 (String.length f - 1)
           else f
   in
   let args, env = env#pop_some arity in
