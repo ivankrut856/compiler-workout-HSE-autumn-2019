@@ -1,0 +1,23 @@
+x := [1, 2, 3];
+
+for i := 0, i < x.length, i := i + 1 do
+	write(x[i])
+od;
+
+y := `a (3, 4);
+
+for i := 0, i < y.length, i := i + 1 do
+	write(y[i])
+od;
+
+z := "abcdefg";
+
+for i := 0, i < z.length, i := i + 1 do
+	write(z[i] - 97)
+od;
+
+t := `cons (1, `cons (2, `cons (3, `nil)));
+
+write(t[0]);
+write(t[1][0]);
+write(t[1][1][0])

@@ -329,7 +329,7 @@ let compile (defs, prg) =
   let start_env = new comp_env in
   let compile_d (f, (args, locals, body)) env =
     let (env, body_code) = compile_p body env in
-    let prolog = [LABEL ("func_" ^ f); BEGIN ("func_" ^ f, args, locals)] in
+    let prolog = [LABEL ("L" ^ f); BEGIN ("L" ^ f, args, locals)] in
     let epilog = [END] in
     (env, prolog @ body_code @ epilog)
   in

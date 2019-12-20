@@ -178,6 +178,7 @@ extern void* Bstringval (void *p) {
 }
 
 extern void* Barray (int n, ...) {
+  // fprintf(stderr, "arr sz = \n", n);
   va_list args;
   int i;
   data *r = (data*) malloc (sizeof(int) * (n+1));
@@ -185,10 +186,10 @@ extern void* Barray (int n, ...) {
   r->tag = ARRAY_TAG | n;
   
   va_start(args, n);
-  
   for (i=0; i<n; i++) {
     int ai = va_arg(args, int);
     ((int*)r->contents)[i] = ai; 
+    // fprintf(stderr, "put %d to array\n", ai);
   }
   
   va_end(args);
